@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
 """
-Transfer USDC on testnet
+Transfer USDC on testnet.
+
+Supports sending by name, ENS, or raw address:
+  --to Alice              (contact book lookup)
+  --to vitalik.eth        (ENS resolution)
+  --to 0x742d35Cc...      (raw address)
 """
 import argparse
 import sys
 import json
+import os
+from pathlib import Path
 from web3 import Web3
 from eth_account import Account
 from decimal import Decimal
 import time
+
+# Allow importing contacts-manager from the same directory
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from importlib import import_module
+contacts_mod = import_module("contacts-manager")
 
 # Network configurations
 NETWORKS = {
@@ -72,14 +84,29 @@ def load_wallet(key_file: str = None, private_key: str = None) -> Account:
     
     raise ValueError("Must provide either --key-file or --private-key")
 
-def transfer_usdc(to_address: str, amount: float, network: str, 
+def resolve_recipient(recipient: str) -> tuple[str, str | None]:
+    """
+    Resolve a recipient to a checksum address.
+    Returns (address, display_name_or_None).
+    """
+    result = contacts_mod.resolve_name(recipient)
+    if not result["success"]:
+        raise ValueError(result.get("error", f"Cannot resolve recipient: {recipient}"))
+    display = result["name"] if result["source"] in ("contacts", "ens", "fuzzy") else None
+    return result["address"], display
+
+
+def transfer_usdc(to_raw: str, amount: float, network: str,
                   key_file: str = None, private_key: str = None,
                   gas_price_gwei: float = None) -> dict:
-    """Transfer USDC to another address"""
+    """Transfer USDC to another address (accepts name, ENS, or 0x address)"""
     try:
         if network not in NETWORKS:
             raise ValueError(f"Unknown network: {network}")
-        
+
+        # ── resolve recipient ───────────────────────────────────
+        to_address, display_name = resolve_recipient(to_raw)
+
         config = NETWORKS[network]
         w3 = Web3(Web3.HTTPProvider(config['rpc']))
         
@@ -89,10 +116,6 @@ def transfer_usdc(to_address: str, amount: float, network: str,
         # Load wallet
         account = load_wallet(key_file, private_key)
         from_address = account.address
-        
-        # Validate recipient address
-        if not Web3.is_address(to_address):
-            raise ValueError(f"Invalid recipient address: {to_address}")
         
         to_address = Web3.to_checksum_address(to_address)
         
@@ -154,7 +177,7 @@ def transfer_usdc(to_address: str, amount: float, network: str,
         # Wait for receipt (with timeout)
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=300)
         
-        return {
+        result = {
             'success': True,
             'tx_hash': tx_hash_hex,
             'from': from_address,
@@ -166,6 +189,9 @@ def transfer_usdc(to_address: str, amount: float, network: str,
             'status': 'confirmed' if receipt['status'] == 1 else 'failed',
             'explorer': f"{config['explorer']}/tx/{tx_hash_hex}"
         }
+        if display_name:
+            result['recipient_name'] = display_name
+        return result
         
     except Exception as e:
         return {
@@ -176,7 +202,7 @@ def transfer_usdc(to_address: str, amount: float, network: str,
 
 def main():
     parser = argparse.ArgumentParser(description='Transfer USDC on testnet')
-    parser.add_argument('--to', required=True, help='Recipient address')
+    parser.add_argument('--to', required=True, help='Recipient: name, ENS (alice.eth), or 0x address')
     parser.add_argument('--amount', required=True, type=float, help='Amount of USDC to send')
     parser.add_argument('--network', default='base-sepolia',
                        choices=list(NETWORKS.keys()),
@@ -193,8 +219,8 @@ def main():
         sys.exit(1)
     
     result = transfer_usdc(
-        args.to, 
-        args.amount, 
+        args.to,
+        args.amount,
         args.network,
         args.key_file,
         args.private_key,
@@ -205,9 +231,12 @@ def main():
         print(json.dumps(result, indent=2))
     else:
         if result['success']:
+            to_display = result.get('recipient_name', result['to'])
+            if result.get('recipient_name'):
+                to_display = f"{result['recipient_name']} ({result['to']})"
             print(f"\n✓ Transfer successful!")
             print(f"From: {result['from']}")
-            print(f"To: {result['to']}")
+            print(f"To: {to_display}")
             print(f"Amount: {result['amount']} USDC")
             print(f"Tx Hash: {result['tx_hash']}")
             print(f"Block: {result['block']}")

@@ -36,6 +36,40 @@ You can:
 
 ## Commands
 
+### Manage Contacts
+
+Users shouldn't have to remember 0x addresses. Use the contact book:
+
+```bash
+# Add a contact
+python3 scripts/contacts-manager.py add --name "Alice" --address 0x742d35Cc6634C0532925a3b844Bc454e4438f44e
+
+# List all contacts
+python3 scripts/contacts-manager.py list
+
+# Look up by name (also resolves ENS like alice.eth)
+python3 scripts/contacts-manager.py lookup --name Alice
+
+# Fuzzy search
+python3 scripts/contacts-manager.py search --query ali
+
+# Rename
+python3 scripts/contacts-manager.py rename --name Alice --new-name AliceWang
+
+# Remove
+python3 scripts/contacts-manager.py remove --name Alice
+
+# Export / Import for backup
+python3 scripts/contacts-manager.py export > backup.json
+python3 scripts/contacts-manager.py import --file backup.json
+```
+
+**When to use**: Whenever a user mentions a name that isn't an 0x address. The transfer script resolves names automatically — just pass `--to Alice` instead of `--to 0x...`.
+
+**Resolution order**: Contact book → ENS (*.eth) → raw 0x address → fuzzy match
+
+**Important**: Always offer to save new addresses as contacts after a first-time transfer.
+
 ### Check Balance
 
 Check USDC balance for any address:
@@ -55,17 +89,20 @@ python3 scripts/usdc-balance.py --address 0x742d35Cc6634C0532925a3b844Bc454e4438
 
 ### Transfer USDC
 
-Send USDC to another address:
+Send USDC to another address. Accepts contact names, ENS names, or raw addresses:
 
 ```bash
-python3 scripts/usdc-transfer.py \
-  --to 0xRecipientAddress \
-  --amount 10.5 \
-  --network base-sepolia \
-  --key-file .secrets/wallet.json
+# By contact name
+python3 scripts/usdc-transfer.py --to Alice --amount 10.5 --network base-sepolia --key-file .secrets/wallet.json
+
+# By ENS name
+python3 scripts/usdc-transfer.py --to alice.eth --amount 10.5 --network base-sepolia --key-file .secrets/wallet.json
+
+# By raw address
+python3 scripts/usdc-transfer.py --to 0xRecipientAddress --amount 10.5 --network base-sepolia --key-file .secrets/wallet.json
 ```
 
-**When to use**: User says "send 10 USDC to 0x...", "pay Alice 5 USDC", etc.
+**When to use**: User says "send 10 USDC to Alice", "pay Bob 5 USDC", "send 20 USDC to 0x..."
 
 **Important**:
 - Always confirm amount and recipient before executing
