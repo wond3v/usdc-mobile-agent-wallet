@@ -45,11 +45,12 @@ def get_history_via_rpc(address: str, network: str, limit: int = 10) -> dict:
         current_block = w3.eth.block_number
         from_block = max(0, current_block - 1000)
         
-        # Get Transfer events
-        transfer_topic = Web3.keccak(text='Transfer(address,address,uint256)').hex()
+        # Get Transfer event topic hash (keep as HexBytes for web3 compatibility)
+        transfer_topic = Web3.keccak(text='Transfer(address,address,uint256)')
         
-        # Address as topic (padded to 32 bytes)
-        address_topic = '0x' + address[2:].zfill(64).lower()
+        # Address as topic (padded to 32 bytes, must have 0x prefix)
+        address_hex = address[2:].lower().zfill(64)
+        address_topic = '0x' + address_hex
         
         # Get transfers FROM this address
         logs_from = w3.eth.get_logs({
@@ -74,7 +75,13 @@ def get_history_via_rpc(address: str, network: str, limit: int = 10) -> dict:
         for log in all_logs[:limit]:
             from_addr = '0x' + log['topics'][1].hex()[-40:]
             to_addr = '0x' + log['topics'][2].hex()[-40:]
-            value = int(log['data'], 16)
+            
+            # log['data'] is HexBytes in web3.py v6+
+            raw_data = log['data']
+            if isinstance(raw_data, bytes):
+                value = int.from_bytes(raw_data, 'big')
+            else:
+                value = int(raw_data, 16)
             
             # Get block info
             block = w3.eth.get_block(log['blockNumber'])

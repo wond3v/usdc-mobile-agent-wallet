@@ -54,8 +54,8 @@ def monitor_incoming(address: str, network: str, interval: int = 15,
                 
                 if current_block > last_block:
                     # Get Transfer events to our address
-                    transfer_topic = Web3.keccak(text='Transfer(address,address,uint256)').hex()
-                    address_topic = '0x' + address[2:].zfill(64).lower()
+                    transfer_topic = Web3.keccak(text='Transfer(address,address,uint256)')
+                    address_topic = '0x' + address[2:].lower().zfill(64)
                     
                     logs = w3.eth.get_logs({
                         'fromBlock': last_block + 1,
@@ -75,7 +75,11 @@ def monitor_incoming(address: str, network: str, interval: int = 15,
                         
                         # Parse transfer
                         from_addr = '0x' + log['topics'][1].hex()[-40:]
-                        value = int(log['data'], 16) / (10 ** 6)  # USDC has 6 decimals
+                        raw_data = log['data']
+                        if isinstance(raw_data, bytes):
+                            value = int.from_bytes(raw_data, 'big') / (10 ** 6)
+                        else:
+                            value = int(raw_data, 16) / (10 ** 6)
                         
                         # Get block timestamp
                         block = w3.eth.get_block(log['blockNumber'])
